@@ -1,74 +1,56 @@
-const { WebSocketServer } = require('ws');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 
-// Порт берем из среды окружения облака (процесс Render/Railway сам назначит его)
-const PORT = process.env.PORT || 5000;
-const wss = new WebSocketServer({ port: PORT });
+const app = express();
+const server = http.createServer(app);
 
-// Хранилище комнат и подключенных пользователей
-const rooms = new Map();
-
-console.log(`🚀 Глобальный сервер сигнализации запущен на порту ${PORT}`);
-
-wss.on('connection', (ws) => {
-    let currentRoom = null;
-    let userId = Math.random().toString(36).substring(7);
-
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-
-            switch (data.type) {
-                // Когда пользователь заходит в комнату
-                case 'join':
-                    currentRoom = data.room;
-                    if (!rooms.has(currentRoom)) {
-                        rooms.set(currentRoom, new Set());
-                    }
-                    rooms.get(currentRoom).add(ws);
-                    ws.userId = userId;
-
-                    console.log(`📱 Пользователь ${userId} зашел в комнату: ${currentRoom}`);
-
-                    // Оповещаем остальных в комнате, что зашел новый участник
-                    broadcastToRoom(currentRoom, ws, { type: 'user-joined', userId: userId });
-                    break;
-
-                // Пересылка WebRTC офферов, ответов и ICE-кандидатов
-                case 'offer':
-                case 'answer':
-                case 'candidate':
-                    if (currentRoom) {
-                        broadcastToRoom(currentRoom, ws, data);
-                    }
-                    break;
-            }
-        } catch (e) {
-            console.error("Ошибка обработки сообщения:", e);
-        }
-    });
-
-    ws.on('close', () => {
-        if (currentRoom && rooms.has(currentRoom)) {
-            rooms.get(currentRoom).delete(ws);
-            if (rooms.get(currentRoom).size === 0) {
-                rooms.delete(currentRoom);
-            } else {
-                broadcastToRoom(currentRoom, ws, { type: 'user-left', userId: userId });
-            }
-        }
-        console.log(`🛑 Пользователь ${userId} отключился`);
-    });
+// Настраиваем Socket.IO с разрешением CORS для любых подключений
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
-// Функция отправки сообщений всем в комнате, кроме самого отправителя
-function broadcastToRoom(roomName, senderWs, data) {
-    const room = rooms.get(roomName);
-    if (!room) return;
+// Простой ответ для проверки, что сервер жив
+app.get('/', (req, res) => {
+  res.send('🚀 HQ Signaling Server is Running!');
+});
 
-    const messageString = JSON.stringify(data);
-    room.forEach((client) => {
-        if (client !== senderWs && client.readyState === 1) { // 1 означает OPEN
-            client.send(messageString);
-        }
-    });
-}
+io.on('connection', (socket) => {
+  console.log(`📱 Пользователь подключился: ${socket.id}`);
+
+  // Когда пользователь входит в комнату
+  socket.on('join', (room) => {
+    socket.join(room);
+    console.log(`🏠 Пользователь ${socket.id} зашел в комнату: ${room}`);
+    
+    // Говорим остальным в комнате, что зашел новый участник
+    socket.to(room).emit('user-joined', socket.id);
+  });
+
+  // Пересылка WebRTC офферов
+  socket.on('offer', (data) => {
+    socket.to(data.room).emit('offer', data.offer);
+  });
+
+  // Пересылка WebRTC ответов
+  socket.on('answer', (data) => {
+    socket.to(data.room).emit('answer', data.answer);
+  });
+
+  // Пересылка ICE-кандидатов (сетевых настроек)
+  socket.on('candidate', (data) => {
+    socket.to(data.room).emit('candidate', data.candidate);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`🛑 Пользователь отключился: ${socket.id}`);
+  });
+});
+
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`🔥 Сервер работает на порту ${PORT}`);
+});
