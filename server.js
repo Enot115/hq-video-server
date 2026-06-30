@@ -3,20 +3,17 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const app = express();
-
-// Говорим Express, что мы работаем за прокси-сервером Render (это уберет блокировки)
-app.set('trust proxy', 1);
+app.set('trust proxy', 1); // Включаем доверие к прокси-серверу Render
 
 const server = http.createServer(app);
 
-// Настраиваем Socket.IO с максимальными правами доступа
 const io = new Server(server, {
   cors: {
-    origin: "*", // Разрешаем доступ абсолютно любым сайтам (включая Vercel)
+    origin: "*", // Полный доступ для любых внешних сайтов (включая Vercel)
     methods: ["GET", "POST"],
     credentials: true
   },
-  allowEIO3: true // Поддержка старых протоколов для надежности
+  allowEIO3: true
 });
 
 app.get('/', (req, res) => {
@@ -49,7 +46,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// На Render порт ВСЕГДА должен быть взят из process.env.PORT
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🔥 Сервер сигнализации Socket.IO запущен на порту ${PORT}`);
