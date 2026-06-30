@@ -1,0 +1,12 @@
+{
+  "name": "hq-global-server",
+  "version": "1.0.0",
+  "description": "Global signaling server for WebRTC video calls",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
